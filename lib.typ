@@ -88,6 +88,8 @@
 }
 
 #let _config = state("_config", _fill_config())
+// Internal base page used for relative page bucketing.
+#let _pagebucket-base = state("_marginalia_pagebucket_base", 1)
 
 /// Page setup helper
 ///
@@ -190,6 +192,7 @@
   if config.named().at("reset-state", default: false) {
     state("_note_extends_left", (:)).update((:))
     state("_note_extends_right", (:)).update((:))
+    context _pagebucket-base.update(here().page())
   }
   _config.update(_fill_config(..config))
   set page(.._page-setup(..config))
@@ -524,7 +527,7 @@
       let dy = dy.to-absolute()
       let anchor = here().position()
       let pagewidth = if page.flipped { page.height } else { page.width }
-      let page_num = str(anchor.page)
+      let page_num = str(anchor.page - _pagebucket-base.get())
 
       let side = if side == "near" { _get-near-side() } else { side }
 
@@ -1168,7 +1171,7 @@
     }
 
     let position = here().position().y
-    let page_num = str(here().page())
+    let page_num = str(here().page() - _pagebucket-base.get())
     let pagewidth = if page.flipped { page.height } else { page.width }
     let linewidth = (
       pagewidth
