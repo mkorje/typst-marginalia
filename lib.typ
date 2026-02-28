@@ -179,10 +179,18 @@
   /// Minimal vertical distance between notes and to wide blocks.
   /// -> length
   clearance: 12pt,
+  /// Whether to clear note-placement state when setup is entered.
+  /// Useful when applying setup to independent chunks (e.g. chapters).
+  /// -> bool
+  reset-state: false,
   /// -> content
   body,
 ) = { }
 #let setup(..config, body) = {
+  if config.named().at("reset-state", default: false) {
+    state("_note_extends_left", (:)).update((:))
+    state("_note_extends_right", (:)).update((:))
+  }
   _config.update(_fill_config(..config))
   set page(.._page-setup(..config))
   show ref: it => {

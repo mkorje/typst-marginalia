@@ -14,6 +14,7 @@ Put something akin to the following at the start of your `.typ` file:
   // bottom: 2.5cm,
   // book: false,
   // clearance: 12pt,
+  // reset-state: false,
 )
 ```
 
@@ -24,6 +25,11 @@ pages. Notes are placed in the outside margin by default.
 Where you can then customize these options to your preferences. Shown here (as
 comments) are the default values taken if the corresponding keys are unset.
 [Please refer to the PDF documentation for more details on the configuration and the provided commands.](https://github.com/nleanba/typst-marginalia/blob/v0.3.1/Marginalia.pdf?raw=true)
+
+If you apply `setup` to independent chunks (for example one `show` scope per
+chapter), set `reset-state: true` in those scopes. This clears internal
+note-placement state at each scope boundary so note placement does not depend on
+earlier chunks.
 
 Additionally, I recommend using Typst's partial function application feature to
 customize other aspects of the notes consistently:
