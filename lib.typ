@@ -7,7 +7,6 @@
 /// #example(scale-preview: 100%, ```typc notecounter.update(1)```)
 /// -> counter
 #let notecounter = counter("marginalia-note")
-
 /// Icons to use for note markers.
 ///
 /// ```typc ("◆", "●", "■", "▲", "♥", "◇", "○", "□", "△", "♡")```
@@ -529,12 +528,11 @@
       let extends = if side == "right" { _note_extends_right } else { _note_extends_left }
       // let offsets = if side == "right" { _note_offsets_right } else { _note_offsets_left }
 
-      let current = extends.get().at(page_num, default: ())
-      let index = current.len()
+      let place-id = here()
 
       extends.update(old => {
         let oldpage = old.at(page_num, default: ())
-        oldpage.push((natural: natural_position, height: height, shift: shift, keep-order: keep-order))
+        oldpage.push((id: place-id, natural: natural_position, height: height, shift: shift, keep-order: keep-order))
         old.insert(page_num, oldpage)
         old
       })
@@ -544,14 +542,20 @@
         bottom: _config.get().bottom,
         top: _config.get().top,
       )
-      let offset_items = extends
+      let offset_page_items = extends
         .final()
         .at(page_num, default: ())
+      let offset_items = offset_page_items
         .enumerate()
         .map(((key, item)) => (str(key), item))
         .to-dict()
       let offset_clearance = _config.get().clearance
       let dbg = _calculate-offsets(offset_page, offset_items, offset_clearance)
+      let place-key = offset_page_items
+        .enumerate()
+        .filter(((_, item)) => item.id == place-id)
+        .map(((key, _)) => str(key))
+        .at(-1, default: none)
       // TODO: trying to cache the results does not work.
       // offsets.update(old => {
       //   // only do calculations if not yet in old
@@ -565,8 +569,8 @@
       //   }
       // })
 
-      // let vadjust = dy + offsets.final().at(page_num, default: (:)).at(str(index), default: 0pt)
-      let vadjust = dy + dbg.at(str(index), default: 0pt)
+      // let vadjust = dy + offsets.final().at(page_num, default: (:)).at(place-key, default: 0pt)
+      let vadjust = dy + if place-key == none { 0pt } else { dbg.at(place-key, default: 0pt) }
 
       // box(width: 0pt, place(box(fill: yellow, width: 1cm, text(size: 5pt)[#anchor.y + #vadjust = #(anchor.y + vadjust)])))
 
@@ -1170,22 +1174,20 @@
     let height = measure(width: linewidth + left + right, body).height
 
     if left != 0pt {
-      let current = _note_extends_left.get().at(page_num, default: ())
-      let index = current.len()
+      let place-id = (here(), "left")
       _note_extends_left.update(old => {
         let oldpage = old.at(page_num, default: ())
-        oldpage.push((natural: position, height: height, shift: false, keep-order: false))
+        oldpage.push((id: place-id, natural: position, height: height, shift: false, keep-order: false))
         old.insert(page_num, oldpage)
         old
       })
     }
 
     if right != 0pt {
-      let current = _note_extends_right.get().at(page_num, default: ())
-      let index = current.len()
+      let place-id = (here(), "right")
       _note_extends_right.update(old => {
         let oldpage = old.at(page_num, default: ())
-        oldpage.push((natural: position, height: height, shift: false, keep-order: false))
+        oldpage.push((id: place-id, natural: position, height: height, shift: false, keep-order: false))
         old.insert(page_num, oldpage)
         old
       })
