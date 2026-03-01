@@ -88,8 +88,6 @@
 }
 
 #let _config = state("_config", _fill_config())
-// Internal base page used for relative page bucketing.
-#let _pagebucket-base = state("_marginalia_pagebucket_base", 1)
 
 /// Page setup helper
 ///
@@ -189,11 +187,6 @@
   body,
 ) = { }
 #let setup(..config, body) = {
-  if config.named().at("reset-state", default: false) {
-    state("_note_extends_left", (:)).update((:))
-    state("_note_extends_right", (:)).update((:))
-    context _pagebucket-base.update(here().page())
-  }
   _config.update(_fill_config(..config))
   set page(.._page-setup(..config))
   show ref: it => {
@@ -351,7 +344,7 @@
   let ignore = ()
   let reoderable = ()
   let nonreoderable = ()
-  for (key, item) in items.pairs() {
+  for (key, item) in items.pairs().sorted(key: ((key, item)) => (item.natural, key)) {
     if item.shift == "ignore" {
       ignore.push(key)
     } else if item.keep-order == false {
@@ -486,10 +479,8 @@
 // #let _parent-note = state("_marginalia_parent-note-natural", false)
 
 #let _note_extends_left = state("_note_extends_left", (:))
-// #let _note_offsets_left = state("_note_offsets_left", (:))
-
 #let _note_extends_right = state("_note_extends_right", (:))
-// #let _note_offsets_right = state("_note_offsets_right", (:))
+#let _placement-counter = counter("_marginalia_placement_counter")
 
 
 // Internal use.
@@ -514,6 +505,7 @@
 #let place-note(
   /// -> "right" | "left" | "near"
   side: "right",
+  placement-id: none,
   dy: 0pt,
   keep-order: false,
   shift: true,
@@ -521,13 +513,15 @@
 ) = (
   box(
     width: 0pt,
+    height: 0pt,
     context {
       assert(side == "left" or side == "right" or side == "near", message: "side must be left or right.")
+      assert(placement-id != none, message: "place-note requires placement-id.")
 
       let dy = dy.to-absolute()
       let anchor = here().position()
       let pagewidth = if page.flipped { page.height } else { page.width }
-      let page_num = str(anchor.page - _pagebucket-base.get())
+      let page_num = str(anchor.page)
 
       let side = if side == "near" { _get-near-side() } else { side }
 
@@ -537,16 +531,18 @@
       let natural_position = anchor.y + dy
 
       let extends = if side == "right" { _note_extends_right } else { _note_extends_left }
-      // let offsets = if side == "right" { _note_offsets_right } else { _note_offsets_left }
 
-      let place-id = here()
-
-      extends.update(old => {
-        let oldpage = old.at(page_num, default: ())
-        oldpage.push((id: place-id, natural: natural_position, height: height, shift: shift, keep-order: keep-order))
-        old.insert(page_num, oldpage)
-        old
-      })
+      // Guard: skip warmup writes where the anchor hasn't settled (y≈0, producing
+      // natural_position < 0). Writing these would pollute state.final() with
+      // bad page-bucket entries that take extra passes to correct.
+      if natural_position >= 0pt {
+        extends.update(old => {
+          let oldpage = old.at(page_num, default: (:))
+          oldpage.insert(placement-id, (id: placement-id, natural: natural_position, height: height, shift: shift, keep-order: keep-order))
+          old.insert(page_num, oldpage)
+          old
+        })
+      }
 
       let offset_page = (
         height: if page.flipped { page.width } else { page.height },
@@ -555,35 +551,11 @@
       )
       let offset_page_items = extends
         .final()
-        .at(page_num, default: ())
-      let offset_items = offset_page_items
-        .enumerate()
-        .map(((key, item)) => (str(key), item))
-        .to-dict()
+        .at(page_num, default: (:))
       let offset_clearance = _config.get().clearance
-      let dbg = _calculate-offsets(offset_page, offset_items, offset_clearance)
-      let place-key = offset_page_items
-        .enumerate()
-        .filter(((_, item)) => item.id == place-id)
-        .map(((key, _)) => str(key))
-        .at(-1, default: none)
-      // TODO: trying to cache the results does not work.
-      // offsets.update(old => {
-      //   // only do calculations if not yet in old
-      //   if page_num in old {
-      //     old
-      //   } else {
-      //     let new_offsets = _calculate-offsets(offset_page, offset_items, offset_clearance)
-      //     assert(dbg == new_offsets)
-      //     old.insert(page_num, new_offsets)
-      //     old
-      //   }
-      // })
+      let dbg = _calculate-offsets(offset_page, offset_page_items, offset_clearance)
 
-      // let vadjust = dy + offsets.final().at(page_num, default: (:)).at(place-key, default: 0pt)
-      let vadjust = dy + if place-key == none { 0pt } else { dbg.at(place-key, default: 0pt) }
-
-      // box(width: 0pt, place(box(fill: yellow, width: 1cm, text(size: 5pt)[#anchor.y + #vadjust = #(anchor.y + vadjust)])))
+      let vadjust = dy + dbg.at(placement-id, default: 0pt)
 
       let hadjust = if side == "left" { get-left().far - anchor.x } else {
         pagewidth - anchor.x - get-right().far - get-right().width
@@ -692,6 +664,7 @@
 ) = {
   metadata("_marginalia_note")
 
+  _placement-counter.step()
   let numbering = if counter == none { none } else { numbering }
   if numbering != none { counter.step() }
   let flush-numbering = if flush-numbering == auto { anchor-numbering != auto } else { flush-numbering }
@@ -704,6 +677,8 @@
   let par-style = (spacing: 1.2em, leading: 0.5em, hanging-indent: 0pt, ..par-style)
 
   context {
+    let placement-id = "note:" + str(_placement-counter.get().first())
+
     let side = if side == "outer" or side == auto {
       if _config.get().book and calc.even(here().page()) { "left" } else { "right" }
     } else if side == "inner" {
@@ -779,7 +754,7 @@
             // HACK: inner align ensures text-direction is unaffected by `place(left,..)`
             set text(..text-style)
             set par(..par-style)
-            [#metadata((note: true, anchor: anchor))<_marginalia_note>#body]
+            [#metadata((note: true, anchor: anchor, placement-id: placement-id))<_marginalia_note>#body]
           },
         ),
       ),
@@ -819,7 +794,7 @@
           anchor
         }
       }
-      place-note(side: side, dy: dy, keep-order: keep-order, shift: shift, body)
+      place-note(side: side, placement-id: placement-id, dy: dy, keep-order: keep-order, shift: shift, body)
     })
   }
 }
@@ -1143,8 +1118,12 @@
   side: auto,
   /// -> content
   body,
-) = (
+) = {
+  _placement-counter.step()
   context {
+    let placement-index = _placement-counter.get().first()
+    let source-id = "wideblock:" + str(placement-index)
+
     let left-margin = get-left()
     let right-margin = get-right()
 
@@ -1171,7 +1150,7 @@
     }
 
     let position = here().position().y
-    let page_num = str(here().page() - _pagebucket-base.get())
+    let page_num = str(here().page())
     let pagewidth = if page.flipped { page.height } else { page.width }
     let linewidth = (
       pagewidth
@@ -1184,29 +1163,32 @@
     )
     let height = measure(width: linewidth + left + right, body).height
 
-    if left != 0pt {
-      let place-id = (here(), "left")
-      _note_extends_left.update(old => {
-        let oldpage = old.at(page_num, default: ())
-        oldpage.push((id: place-id, natural: position, height: height, shift: false, keep-order: false))
-        old.insert(page_num, oldpage)
-        old
-      })
-    }
+    // Same warmup guard as place-note: skip writes when position hasn't settled.
+    if position >= 0pt {
+      if left != 0pt {
+        let place-id = source-id + ":left"
+        _note_extends_left.update(old => {
+          let oldpage = old.at(page_num, default: (:))
+          oldpage.insert(place-id, (id: place-id, natural: position, height: height, shift: false, keep-order: false))
+          old.insert(page_num, oldpage)
+          old
+        })
+      }
 
-    if right != 0pt {
-      let place-id = (here(), "right")
-      _note_extends_right.update(old => {
-        let oldpage = old.at(page_num, default: ())
-        oldpage.push((id: place-id, natural: position, height: height, shift: false, keep-order: false))
-        old.insert(page_num, oldpage)
-        old
-      })
+      if right != 0pt {
+        let place-id = source-id + ":right"
+        _note_extends_right.update(old => {
+          let oldpage = old.at(page_num, default: (:))
+          oldpage.insert(place-id, (id: place-id, natural: position, height: height, shift: false, keep-order: false))
+          old.insert(page_num, oldpage)
+          old
+        })
+      }
     }
 
     pad(left: -left, right: -right, body)
   }
-)
+}
 
 
 // #let header(
